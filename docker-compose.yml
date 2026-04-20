@@ -1,0 +1,160 @@
+services:
+  proxy:
+    image: nginx:1.27-alpine
+    depends_on:
+      - web
+      - api
+    ports:
+      - "${APP_PORT:-3000}:80"
+    volumes:
+      - ./ops/nginx/default.conf:/etc/nginx/conf.d/default.conf:ro
+
+  api:
+    build:
+      context: .
+      dockerfile: apps/api/Dockerfile
+    env_file:
+      - .env
+    environment:
+      API_ROOT_PATH: ${API_ROOT_PATH:-/api}
+      APP_PUBLIC_ORIGIN: ${APP_PUBLIC_ORIGIN:-http://localhost:3000}
+      API_BASE_URL: http://api:8000
+      DATABASE_URL: postgresql+asyncpg://postgres:postgres@postgres:5432/blostem
+      CLICKHOUSE_URL: http://clickhouse:8123
+      QDRANT_URL: http://qdrant:6333
+      REDPANDA_BROKERS: redpanda:9092
+      OBJECT_STORAGE_ENDPOINT: http://minio:9000
+      TEMPORAL_SERVER_URL: temporal:7233
+      NVIDIA_KIMI_FALLBACK_MODELS: ${NVIDIA_KIMI_FALLBACK_MODELS:-moonshotai/kimi-k2-thinking,moonshotai/kimi-k2-instruct-0905,moonshotai/kimi-k2-instruct}
+      DISCOVERY_SCHEDULER_ENABLED: ${DISCOVERY_SCHEDULER_ENABLED:-true}
+      AUTOMATION_POLL_SECONDS: ${AUTOMATION_POLL_SECONDS:-300}
+      LIVE_SEARCH_PROVIDER: ${LIVE_SEARCH_PROVIDER:-auto}
+      LIVE_SEARCH_MAX_RESULTS: ${LIVE_SEARCH_MAX_RESULTS:-5}
+      TAVILY_API_KEY: ${TAVILY_API_KEY:-}
+    depends_on:
+      - postgres
+      - clickhouse
+      - qdrant
+      - redpanda
+      - minio
+      - temporal
+    expose:
+      - "8000"
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health')"]
+      interval: 20s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+
+  web:
+    build:
+      context: .
+      dockerfile: apps/web/Dockerfile
+    environment:
+      API_BASE_URL: http://api:8000
+      NEXT_PUBLIC_API_BASE_URL: /api
+    depends_on:
+      - api
+    expose:
+      - "3000"
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:3000 >/dev/null 2>&1 || exit 1"]
+      interval: 20s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+
+  postgres:
+    image: postgres:17
+    environment:
+      POSTGRES_DB: blostem
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+    ports:
+      - "127.0.0.1:${POSTGRES_PORT:-5433}:5432"
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d blostem"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  clickhouse:
+    image: clickhouse/clickhouse-server:25.3
+    ports:
+      - "127.0.0.1:${CLICKHOUSE_HTTP_PORT:-8123}:8123"
+      - "127.0.0.1:${CLICKHOUSE_NATIVE_PORT:-9002}:9000"
+    environment:
+      CLICKHOUSE_DB: default
+    volumes:
+      - clickhouse-data:/var/lib/clickhouse
+
+  qdrant:
+    image: qdrant/qdrant:v1.14.1
+    ports:
+      - "127.0.0.1:${QDRANT_HTTP_PORT:-6333}:6333"
+      - "127.0.0.1:${QDRANT_GRPC_PORT:-6334}:6334"
+    volumes:
+      - qdrant-data:/qdrant/storage
+
+  redpanda:
+    image: docker.redpanda.com/redpandadata/redpanda:v25.1.2
+    command:
+      - redpanda
+      - start
+      - --smp=1
+      - --memory=1G
+      - --reserve-memory=0M
+      - --overprovisioned
+      - --node-id=0
+      - --check=false
+      - --kafka-addr=internal://0.0.0.0:9092
+      - --advertise-kafka-addr=internal://redpanda:9092
+      - --pandaproxy-addr=internal://0.0.0.0:8082
+      - --advertise-pandaproxy-addr=internal://redpanda:8082
+    volumes:
+      - redpanda-data:/var/lib/redpanda/data
+
+  minio:
+    image: minio/minio:RELEASE.2025-04-22T22-12-26Z
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: minioadmin
+      MINIO_ROOT_PASSWORD: minioadmin
+    ports:
+      - "127.0.0.1:${MINIO_API_PORT:-9000}:9000"
+      - "127.0.0.1:${MINIO_CONSOLE_PORT:-9001}:9001"
+    volumes:
+      - minio-data:/data
+
+  temporal:
+    image: temporalio/auto-setup:1.27.2
+    depends_on:
+      - postgres
+    environment:
+      DB: postgres12
+      DB_PORT: 5432
+      POSTGRES_USER: postgres
+      POSTGRES_PWD: postgres
+      POSTGRES_SEEDS: postgres
+    ports:
+      - "127.0.0.1:${TEMPORAL_PORT:-7233}:7233"
+
+  temporal-ui:
+    image: temporalio/ui:2.39.0
+    depends_on:
+      - temporal
+    environment:
+      TEMPORAL_ADDRESS: temporal:7233
+      TEMPORAL_CORS_ORIGINS: ${APP_PUBLIC_ORIGIN:-http://localhost:3000}
+    ports:
+      - "127.0.0.1:${TEMPORAL_UI_PORT:-8088}:8080"
+
+volumes:
+  postgres-data:
+  clickhouse-data:
+  qdrant-data:
+  redpanda-data:
+  minio-data:

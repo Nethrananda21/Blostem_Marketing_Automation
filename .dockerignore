@@ -1,0 +1,13 @@
+.git
+.next
+.pytest_cache
+.ruff_cache
+__pycache__
+node_modules
+coverage
+dist
+apps/api/dev.db
+apps/api/test.db
+apps/api/*.log
+apps/web/*.log
+apps/web/tsconfig.tsbuildinfo
