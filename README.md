@@ -1,27 +1,422 @@
 # Blostem B2B AI Marketing Engine
 
-Blostem is an India-first BFSI pilot for an internal AI-powered B2B marketing and sales enablement platform. It helps Blostem sales reps find high-intent banks, fintechs, NBFCs, insurers, and agencies from market signals, map the buying committee, generate compliance-safe outreach, manage the account queue, and continue activation nudges after a deal is signed.
+Blostem is an India-first BFSI pilot for an internal AI-powered sales and marketing engine. It helps sales reps discover high-intent enterprise accounts, map buying committees, generate compliant persona-specific outreach, manage a Shadow CRM, and keep post-sale momentum moving through activation handoff and nudging.
 
-The product is not a generic chatbot. It is closer to a sales operations cockpit with an AI agent and automation layer: market data comes in, the backend scores accounts, drafts persona-specific outreach, checks citations and compliance, and keeps the human rep in control before anything external is sent.
+This is not a generic chatbot. It is a workflow-driven sales cockpit with an AI copilot and automation layer:
 
-## Current Status
+`Product Context -> Market Discovery -> AI Triage -> Human Queue -> Deep Research -> Committee Mapping -> Persona Drafting -> Compliance Gate -> Human Approval -> Reachout -> Post-Sale Nudging`
 
-This repo currently implements a working pilot version with:
+## What the Product Does
 
-- A `Next.js` sales cockpit frontend.
-- A `FastAPI` backend.
-- A Postgres-backed Shadow CRM.
-- Public market discovery through Google News RSS-style search.
-- Sidebar live-company research through Tavily or DuckDuckGo search.
-- Scheduled discovery jobs and a candidate inbox.
-- AI model routing for Kimi and Gemma provider profiles.
-- Compliance claim parsing and citation enforcement.
-- Committee-wide draft generation for CTO, CFO, and Legal personas.
-- Nurture sequence state for follow-ups.
-- Closed-won handoff and telemetry-triggered activation nudges.
-- Docker Compose deployment with a single public reverse-proxy entrypoint.
+Blostem solves four core problems in enterprise BFSI selling:
 
-Temporal, Redpanda, ClickHouse, Qdrant, and MinIO are included in Docker as infrastructure services. The pilot still executes most domain workflow logic synchronously in the API, while keeping the architecture ready for deeper Temporal worker execution.
+- Targeting friction: find which banks, fintechs, NBFCs, insurers, or agencies have a reason to care right now.
+- Buying committee complexity: generate different messaging for CTO, CFO, and Legal/Compliance instead of one generic email.
+- Compliance risk: block unsupported or uncited claims before anything reaches a customer.
+- Activation stall: continue tracking momentum after closed-won and generate nudges when rollout slows down.
+
+## Current Implementation Status
+
+The repo currently contains a working pilot with:
+
+- `Next.js` frontend for the sales cockpit.
+- `FastAPI` backend for APIs, orchestration, and AI routing.
+- `Postgres` Shadow CRM for accounts, contacts, drafts, approvals, activity, nurture state, and handoff state.
+- Public market discovery for net-new accounts.
+- A right-rail AI copilot sidebar with async job execution.
+- Live company research using Tavily or DuckDuckGo fallback.
+- Committee-wide drafting for `CTO`, `CFO`, and `Legal`.
+- Sentence-level compliance review with citation enforcement.
+- Human approval and reachout flow.
+- Nurture sequences with follow-up state.
+- Closed-won handoff plus telemetry-triggered activation nudges.
+- Full Docker deployment through one `docker compose` command.
+
+Infrastructure services are provisioned in Docker:
+
+- `Postgres`
+- `Redpanda`
+- `ClickHouse`
+- `Qdrant`
+- `MinIO`
+- `Temporal`
+- `Temporal UI`
+- `Nginx` reverse proxy
+
+The pilot still executes most business workflows directly in the API service, while the stack is already shaped for deeper Temporal worker expansion.
+
+## Product Features
+
+### 1. Shadow CRM
+
+The pilot uses Postgres as the CRM system of record instead of Salesforce or HubSpot.
+
+What it stores:
+
+- Accounts
+- Contacts
+- Pipeline stages
+- Scores and next actions
+- Opportunities
+- Draft assets
+- Approvals and review history
+- Activity log
+- Nurture sequences and touches
+- Activation briefs
+- Discovery jobs and candidate inbox records
+
+Why it exists:
+
+- Zero third-party CRM dependency in v1
+- Better data privacy for BFSI
+- Faster internal workflows without external API latency
+
+### 2. Product Context Catalog
+
+Product Context tells the system what Blostem sells and how to reason about relevance.
+
+Each Product Context can define:
+
+- `key`, `name`, `version`, `overview`
+- ICP segments such as `Bank`, `Fintech`, `NBFC`, `Insurance`
+- Trigger patterns such as `security`, `fraud`, `digital onboarding`, `compliance`
+- Disqualifiers
+- Approved claims
+- Buyer personas
+- Activation playbook steps
+
+Why it matters:
+
+- Discovery uses it to search the right market signals
+- Scoring uses it to estimate fit
+- Drafting uses it to anchor messaging
+- Committee mapping uses it to decide which stakeholders matter
+
+### 3. External Discovery
+
+This is the “Detective” capability for finding net-new interested organizations.
+
+What it does:
+
+- Accepts a prompt like `Find Indian banks with recent compliance or security triggers`
+- Builds search queries from the Product Context and prompt
+- Pulls structured public search/news results
+- Extracts likely organization names
+- Cleans and canonicalizes entities
+- Groups duplicate hits
+- Scores candidates by:
+  - interest
+  - fit
+  - freshness
+  - confidence
+  - source count
+- Shows a reviewable candidate list before import
+
+What is supported now:
+
+- Prompt-based discovery
+- Scheduled discovery jobs
+- Candidate inbox
+- Manual import into the interested queue
+
+What is not yet a full web crawler:
+
+- It does not scrape the whole web indiscriminately
+- It relies on controlled public search/news ingestion
+
+### 4. Scheduled External Ingestion
+
+Discovery can run on a schedule, not only from a manual prompt.
+
+What it does:
+
+- Stores recurring discovery jobs in Postgres
+- Runs due jobs through the scheduler or `POST /automation/run-due`
+- Saves results into a reviewable inbox
+- Keeps prompt-only discovery working too
+
+Useful env vars:
+
+- `DISCOVERY_SCHEDULER_ENABLED`
+- `AUTOMATION_POLL_SECONDS`
+
+### 5. Account Queue
+
+The queue is the rep’s working CRM list.
+
+What it shows:
+
+- tracked accounts
+- intent score
+- fit score
+- freshness score
+- top signal
+- primary product context
+- recommended next action
+
+Why it matters:
+
+- Reps stop working from a cold list
+- They start from ranked, evidence-backed priorities
+
+### 6. Account Detail
+
+This is the “glass box” screen for one account.
+
+What it shows:
+
+- account summary
+- current next action
+- cited signals
+- opportunity rationale
+- stakeholder map
+- recent activity
+- nurture sequences
+- pending touches
+- draft links
+- activation handoff if present
+
+Why it matters:
+
+- The rep can see why the system thinks this account matters
+- Every important claim is backed by evidence
+
+### 7. AI Copilot Sidebar
+
+The app includes a right-side copilot-style sidebar for prompting and automation.
+
+What it can do:
+
+- summarize the current account
+- explain why an account is high intent
+- refresh opportunity scoring
+- review a draft
+- build a handoff
+- run deep live research on an open account
+- run discovery-style prompts when no account is open
+
+Important implementation detail:
+
+- Sidebar requests now run asynchronously through job polling
+- The UI no longer has to sit on one long blocking request
+
+Related endpoints:
+
+- `POST /agent/run`
+- `POST /agent/jobs`
+- `GET /agent/jobs/:id`
+
+### 8. Live Company Research
+
+This is the agent’s deterministic live research tool.
+
+What triggers it:
+
+- prompts like `deep research`, `latest`, `recent`, `executive hires`, `RBI`, `penalty`, `compliance issues`, or year-based research requests
+
+What it does:
+
+- searches the public web with account-aware queries
+- uses Tavily when configured
+- falls back to DuckDuckGo when Tavily is not configured
+- converts findings into cited market signals
+- saves those signals to the account record
+- answers the user with a fresh, grounded summary
+
+Result:
+
+- research does not live only in chat
+- it becomes reusable account evidence inside the app
+
+### 9. Committee Mapping and Persona Drafting
+
+This is the “Chameleon” capability.
+
+What it does:
+
+- maps the buying committee
+- creates stakeholder-specific outreach drafts
+- currently targets:
+  - `CTO`
+  - `CFO`
+  - `Legal`
+
+Drafts are tailored differently:
+
+- CTO: technical priorities, controls, platform concerns
+- CFO: operational risk, financial implications, prioritization
+- Legal: governance, compliance posture, review concerns
+
+The system stores separate drafts and touches for each persona.
+
+### 10. Compliance Review
+
+This is the “Lawyer” capability.
+
+What it does:
+
+- splits text into sentence-level checks
+- classifies sentences as factual claims or allowed boilerplate
+- requires support for sensitive factual claims
+- blocks unsupported:
+  - numeric claims
+  - dated claims
+  - comparative claims
+  - ROI claims
+  - security claims
+  - compliance claims
+  - customer claims
+
+What passes without citation:
+
+- simple connective or introductory language like:
+  - `This may be useful to compare notes.`
+  - `I thought this might be relevant to your team.`
+
+### 11. Draft Review and Human Approval
+
+Nothing should go out without a human in the loop.
+
+What the rep can do:
+
+- open a draft
+- inspect citations
+- inspect structured rationale
+- inspect the compliance receipt
+- edit the draft
+- re-run compliance on the edited version
+- approve or reject
+
+Approval also updates related nurture state.
+
+### 12. Reachout
+
+Approved drafts can be handed to the outbound email layer.
+
+Current behavior:
+
+- outbound send support exists through SMTP
+- demo/test mode can redirect every email to a safe override inbox
+- if SMTP is not configured, approval still works and the send is skipped cleanly
+
+### 13. Nurture Sequences
+
+Nurture is tracked as explicit sequence state, not just free-form chat.
+
+What it stores:
+
+- sequence kind
+- current round
+- max rounds
+- cadence days
+- next touch time
+- touch records
+- linked drafts
+
+What it does:
+
+- creates initial committee outreach touches
+- creates follow-up touches when due
+- pauses when max rounds are reached
+
+### 14. Closed-Won Handoff and Activation Nudging
+
+This is the “Coach” capability.
+
+What it does:
+
+- creates a 30-day activation handoff
+- captures blockers, tasks, stakeholders, and telemetry highlights
+- starts a post-sale sequence
+- watches telemetry
+- creates activation nudge drafts when rollout appears stalled
+
+Examples of completion telemetry:
+
+- `login_completed`
+- `workspace_activated`
+- `activation_completed`
+- `first_value_reached`
+
+Examples of early or stalled rollout telemetry:
+
+- `setup_started`
+- `invite_sent`
+- `questionnaire_opened`
+
+## End-to-End Flow
+
+The currently implemented flow is:
+
+1. Create a Product Context.
+2. Run prompt-based discovery or scheduled discovery.
+3. Review ranked candidates in the candidate inbox.
+4. Import a candidate into the interested account queue.
+5. Open the account.
+6. Run opportunity refresh.
+7. Review the committee drafts for CTO, CFO, and Legal.
+8. Run or inspect compliance.
+9. Approve or reject the draft.
+10. Send or record reachout.
+11. Create a closed-won handoff.
+12. Ingest telemetry.
+13. Review activation nudge drafts if rollout is slow.
+
+## AI Model Routing
+
+The backend uses two pinned model profiles.
+
+### Complex Reasoner
+
+- provider: `NVIDIA`
+- primary model: `moonshotai/kimi-k2.5`
+- fallback models:
+  - `moonshotai/kimi-k2-thinking`
+  - `moonshotai/kimi-k2-instruct-0905`
+  - `moonshotai/kimi-k2-instruct`
+
+Used for:
+
+- signal triage
+- committee mapping
+- compliance review
+- ambiguous or high-risk reasoning
+- multi-source synthesis
+- deep live research summarization
+
+### Draft Executor
+
+- provider: `OpenRouter`
+- model: `google/gemma-4-31b-it`
+
+Used for:
+
+- grounded draft generation
+- short rewrites
+- summaries
+- subject line variants
+- formatted call briefs
+
+### Reliability Behavior
+
+To keep the pilot usable in the real world, the system also includes:
+
+- deterministic local fallbacks when providers fail
+- NVIDIA model fallback order
+- provider error cooldowns so repeated failures do not stall the whole workflow
+- shorter draft timeouts than deep-research/agent timeouts
+
+## Reliability and Operational Guards
+
+Recent reliability work includes:
+
+- async sidebar jobs instead of one long blocking prompt request
+- provider fallback for NVIDIA Kimi models
+- provider health cooldown so repeated bad upstream responses do not keep blocking every request
+- faster event-bus publish failure handling when Redpanda is unavailable
+- test-safe scheduler behavior
+
+These changes reduce the “working on that…” stall behavior and make the local and Docker workflows degrade more gracefully.
 
 ## Architecture
 
@@ -32,348 +427,18 @@ Browser
   v
 Nginx reverse proxy
   |---- /      -> Next.js web app
-  |---- /api  -> FastAPI backend
+  |---- /api   -> FastAPI backend
 
 FastAPI backend
-  |---- Postgres: Shadow CRM, workflow state, accounts, contacts, drafts, approvals
-  |---- Redpanda: event bus topics for market signals and telemetry
-  |---- ClickHouse: analytics/facts service placeholder for hard facts
-  |---- Qdrant: retrieval/vector service placeholder
-  |---- MinIO: object storage placeholder for raw source documents
-  |---- Temporal: workflow infrastructure
-  |---- NVIDIA API: Kimi K2.5 complex reasoning profile
-  |---- OpenRouter API: Gemma 4 31B executor profile
+  |---- Postgres   -> Shadow CRM + workflow state
+  |---- Redpanda   -> event topics
+  |---- ClickHouse -> analytics / facts foundation
+  |---- Qdrant     -> retrieval foundation
+  |---- MinIO      -> raw source document foundation
+  |---- Temporal   -> workflow infrastructure
+  |---- NVIDIA     -> Kimi complex reasoner
+  |---- OpenRouter -> Gemma draft executor
 ```
-
-## Feature Guide
-
-### 1. Shadow CRM
-
-The app uses Postgres as the pilot CRM instead of integrating Salesforce/HubSpot in v1.
-
-What it does:
-
-- Stores accounts, contacts, pipeline stage, account scores, next action, activity history, draft status, approvals, nurture sequences, and activation handoffs.
-- Keeps data private inside the Blostem-hosted stack.
-- Avoids third-party CRM API rate limits during the pilot.
-
-Where it appears:
-
-- Account Queue page.
-- Account Detail page.
-- Draft Review page.
-- Closed-Won Handoff page.
-
-### 2. Product Context Catalog
-
-Product Context describes what Blostem sells and how the AI should reason about it.
-
-What it stores:
-
-- Product key, name, version, and overview.
-- ICP segments such as `Bank`, `Fintech`, `NBFC`, or `Insurance`.
-- Trigger patterns such as `security`, `fraud`, `digital onboarding`, or `compliance`.
-- Disqualifiers.
-- Approved claims.
-- Buyer personas.
-- Activation playbook steps.
-
-Why it matters:
-
-- Discovery uses it to decide what organizations are relevant.
-- Draft generation uses it to keep messaging grounded.
-- Opportunity scoring uses it to decide fit and next action.
-
-### 3. Market Discovery: Detective Capability
-
-The Detective capability finds net-new organizations that may need Blostem right now.
-
-What it does:
-
-- Accepts a prompt such as: `Find Indian BFSI organizations with recent security, compliance, or digital onboarding triggers.`
-- Builds search queries from the prompt and selected Product Context.
-- Searches public market/news signals.
-- Extracts organization names.
-- Cleans and canonicalizes entities.
-- Groups duplicate signals by organization.
-- Scores each candidate by interest, fit, freshness, confidence, and source count.
-- Shows the candidate list before importing anything into the CRM.
-
-Current implementation:
-
-- Uses query-driven public discovery through Google News RSS-style ingestion.
-- Does not do uncontrolled open web scraping.
-- Stores scheduled results in a reviewable candidate inbox.
-
-UI behavior:
-
-- Use `External Discovery` on the Account Queue page.
-- Run a prompt-only search with `Search the public web`.
-- Create a recurring job with `Schedule recurring search`.
-- Review scheduled candidates in `Candidate Inbox`.
-- Click `Add to queue` to convert a candidate into an interested account.
-
-### 4. Scheduled External Ingestion
-
-Discovery is not only prompt-based. The backend can run discovery jobs automatically.
-
-What it does:
-
-- Stores recurring discovery jobs in Postgres.
-- Runs due jobs when the API scheduler is enabled.
-- Saves candidates into the discovery inbox.
-- Allows manual `Run now` from the UI.
-- Allows manual backend execution with `POST /automation/run-due`.
-
-Important env vars:
-
-- `DISCOVERY_SCHEDULER_ENABLED=true`
-- `AUTOMATION_POLL_SECONDS=300`
-
-### 5. Account Queue
-
-The Account Queue is the rep’s working list of interested organizations.
-
-What it shows:
-
-- Tracked accounts.
-- Intent score.
-- Fit score.
-- Freshness score.
-- Primary product context.
-- Top signal.
-- Recommended next action.
-
-What it is for:
-
-- Prioritizing who the sales rep should work on first.
-- Moving from noisy market signals to a focused action queue.
-
-### 6. Account Detail
-
-Account Detail is the glass-box view for one account.
-
-What it shows:
-
-- Account summary and next action.
-- Opportunity rationale.
-- Cited evidence.
-- Buying committee.
-- Recent activity.
-- Nurture automation sequences.
-- Pending touches.
-
-What it is for:
-
-- Understanding why the AI thinks the account is relevant.
-- Reviewing evidence before outreach.
-- Opening draft review for a specific outreach touch.
-
-### 7. Committee-Wide Outreach: Chameleon Capability
-
-The Chameleon capability adapts messaging by stakeholder.
-
-What it does:
-
-- When opportunity refresh runs, the workflow creates drafts for CTO, CFO, and Legal/Compliance personas.
-- CTO messaging focuses on technical/platform/control priorities.
-- CFO messaging focuses on operating, financial, and risk priorities.
-- Legal messaging focuses on governance, review, and compliance priorities.
-- Each draft is stored as a separate reviewable asset.
-
-Human-in-the-loop:
-
-- Drafts are not sent automatically.
-- The rep must review and approve.
-- Approval state is stored in the Shadow CRM.
-
-### 8. Compliance Review: Lawyer Capability
-
-The Lawyer capability checks generated text before a human rep sees or approves it.
-
-What it does:
-
-- Splits draft text into sentence-level checks.
-- Classifies each sentence as boilerplate or factual claim.
-- Requires citations for numeric, dated, comparative, regulatory, customer, ROI, security, or compliance claims.
-- Allows generic connective prose without citations.
-- Fails drafts with unsupported factual claims.
-
-Examples:
-
-- `We noticed your recent RBI penalty` requires a citation.
-- `This may be useful to compare notes` can pass as boilerplate.
-- Unsupported ROI promises are blocked.
-- Unsupported security/compliance assertions are blocked.
-
-### 9. Draft Review
-
-Draft Review is the mandatory human approval gateway.
-
-What it shows:
-
-- Subject line.
-- Email body.
-- Citations.
-- Structured rationale.
-- Compliance receipt.
-- Claim-by-claim compliance checks.
-
-What the rep can do:
-
-- Approve the draft.
-- Reject the draft.
-- Edit the draft and re-run compliance.
-
-### 10. Nurture Workflows
-
-Nurture workflows keep track of follow-up state over time.
-
-What it stores:
-
-- Sequence kind: `prospect_outreach` or `post_sale_activation`.
-- Current round.
-- Max rounds.
-- Cadence days.
-- Next touch date.
-- Touch status.
-- Draft linked to each touch.
-
-What it does:
-
-- Creates initial committee outreach touches after opportunity refresh.
-- Creates follow-up touches when due automation runs.
-- Pauses when max rounds are reached.
-
-### 11. Closed-Won Handoff: Coach Capability
-
-The Coach capability starts after a deal is signed.
-
-What it does:
-
-- Generates a 30-day activation handoff.
-- Shows kickoff context, blockers, tasks, stakeholders, and telemetry highlights.
-- Creates a post-sale activation sequence.
-- Watches telemetry events for signs of activation or stall.
-- Generates an activation nudge draft when telemetry suggests setup has started but activation has not completed.
-
-Examples of activation-complete telemetry:
-
-- `login_completed`
-- `workspace_activated`
-- `activation_completed`
-- `first_value_reached`
-
-Examples of stall/early telemetry:
-
-- `setup_started`
-- `invite_sent`
-- `questionnaire_opened`
-
-### 12. AI Agent Sidebar
-
-The app includes a right-side AI agent sidebar inspired by coding assistant sidebars.
-
-What it does:
-
-- Lets the rep prompt the system from the current workspace.
-- Can summarize an account.
-- Can trigger `live_company_research` when a prompt asks for recent/deep web research on an open account.
-- Saves live research findings back into Account Detail as cited market signals.
-- Can refresh opportunity scoring.
-- Can review a draft.
-- Can build a handoff.
-- Shows model/provider status.
-
-Relevant prompts:
-
-- `Find interested Indian banks for this product.`
-- `Why is this account high intent right now?`
-- `Research this account in detail.`
-- `Create CTO, CFO, and Legal outreach for this account.`
-- `Review this draft for compliance risks.`
-- `Create a 30-day activation handoff.`
-- `What should the rep do next?`
-
-The sidebar uses structured actions and backend APIs. It does not expose raw hidden chain-of-thought; the UI shows structured rationale and citations instead.
-
-### 13. Live Company Research Tool
-
-The sidebar agent has a deterministic `live_company_research` tool for prompts that need facts beyond the existing Postgres account record.
-
-What triggers it:
-
-- Prompts containing research intent such as `deep research`, `research`, `latest`, `recent`, `news`, `executive hires`, `compliance issues`, `RBI`, `fine`, `penalty`, or a specific year such as `2026`.
-- The prompt must have an account context, for example after opening an account detail page and asking about that company.
-
-What it does:
-
-- Builds a company-specific web query from the open account and the user prompt.
-- Uses Tavily if `TAVILY_API_KEY` is configured.
-- Falls back to DuckDuckGo HTML search when no Tavily key is available.
-- Converts returned articles into `market-signal.ingested` records with source URLs and citations.
-- Refreshes the sidebar answer with the new citations.
-- Adds an account activity event so the rep can see that live research was saved.
-
-Example flow:
-
-- Open `Axis Bank` in Account Detail.
-- Prompt: `Do deep research on Axis Bank's recent executive hires and compliance issues in 2026.`
-- The backend calls `live_company_research`.
-- New cited search results are saved as account signals.
-- The sidebar responds with a source-backed summary and next actions.
-
-## AI Model Routing
-
-The backend uses two pinned model profiles.
-
-### Complex Reasoner
-
-- Profile: `complex_reasoner`
-- Provider: NVIDIA
-- Model: `moonshotai/kimi-k2.5`
-- Used for: signal triage, committee mapping, compliance review, multi-source synthesis, ambiguous product matching, and high-risk tasks.
-
-### Draft Executor
-
-- Profile: `draft_executor`
-- Provider: OpenRouter
-- Model: `google/gemma-4-31b-it`
-- Used for: grounded draft generation, subject variants, short rewrites, summaries, and call briefs.
-
-Rules:
-
-- Compliance and committee tasks should not silently downgrade from Kimi to Gemma.
-- If live providers are unavailable, parts of the app use deterministic local fallbacks so the pilot remains testable.
-- Secrets must stay in backend environment variables only.
-
-## Data and Event Topics
-
-The platform separates public market signals from internal product telemetry.
-
-Market signal topics:
-
-- `market-signal.ingested`
-- `market-signal.normalized`
-
-Product telemetry topics:
-
-- `product-telemetry.ingested`
-- `product-telemetry.normalized`
-
-Workflow topics:
-
-- `opportunity.scored`
-- `committee.resolved`
-- `draft.generated`
-- `compliance.checked`
-- `approval.recorded`
-- `handoff.generated`
-
-Current note:
-
-- Redpanda is provisioned and event publish hooks exist.
-- The pilot primarily stores state in Postgres and executes workflow logic in the API.
 
 ## Main Screens
 
@@ -381,50 +446,50 @@ Current note:
 
 Path: `/`
 
-Purpose:
+Used for:
 
-- Show ranked interested accounts.
-- Run prompt-based market discovery.
-- Manage scheduled discovery jobs.
-- Review candidate inbox.
-- Add selected candidates to the interested queue.
+- seeing ranked accounts
+- running discovery
+- managing scheduled jobs
+- reviewing candidate inbox
+- importing candidates into the queue
 
 ### Account Detail
 
 Path: `/accounts/:id`
 
-Purpose:
+Used for:
 
-- Show why this account matters.
-- Show cited evidence and rationale.
-- Show stakeholders.
-- Show nurture sequences and pending touches.
-- Open draft review.
+- seeing account rationale
+- reviewing signals and citations
+- reviewing stakeholders
+- tracking nurture state
+- launching deeper research and draft review
 
 ### Draft Review
 
 Path: `/drafts/:id`
 
-Purpose:
+Used for:
 
-- Review generated outreach.
-- Inspect citations.
-- Inspect compliance receipt.
-- Approve, reject, or edit.
+- reading the draft
+- reviewing compliance
+- editing
+- approving or rejecting
 
-### Closed-Won Handoff
+### Handoff
 
 Path: `/deals/:id/handoff`
 
-Purpose:
+Used for:
 
-- Generate/view activation handoff.
-- Show blockers, tasks, telemetry, and stakeholders.
-- Start post-sale activation tracking.
+- creating and reviewing the activation brief
+- seeing blockers and tasks
+- checking telemetry context
 
-## Internal APIs
+## Internal API Surface
 
-### System
+### Health and Status
 
 - `GET /health`
 - `GET /system/status`
@@ -441,16 +506,10 @@ Purpose:
 - `GET /accounts/:id/brief`
 - `POST /accounts/:id/contacts`
 
-### Signal and Telemetry Ingestion
+### Signal and Telemetry
 
 - `POST /signals/ingest`
 - `POST /telemetry/ingest`
-
-### Workflows and Agent
-
-- `POST /workflows/opportunity-refresh`
-- `POST /agent/run`
-- `POST /automation/run-due`
 
 ### Discovery
 
@@ -460,6 +519,14 @@ Purpose:
 - `POST /discovery/jobs/:id/run`
 - `GET /discovery/inbox`
 - `POST /discovery/candidates/add`
+
+### Workflow and Agent
+
+- `POST /workflows/opportunity-refresh`
+- `POST /agent/run`
+- `POST /agent/jobs`
+- `GET /agent/jobs/:id`
+- `POST /automation/run-due`
 
 ### Drafts and Approvals
 
@@ -473,114 +540,65 @@ Purpose:
 - `GET /deals/:id/handoff`
 - `POST /deals/:id/handoff`
 
-## Docker Run
+## Event Topic Families
 
-Copy env values:
+Market signals:
 
-```bash
-cp .env.example .env
-```
+- `market-signal.ingested`
+- `market-signal.normalized`
 
-Fill in provider secrets in `.env`:
+Product telemetry:
 
-```bash
-NVIDIA_API_KEY=your_nvidia_key
-OPENROUTER_API_KEY=your_openrouter_key
-```
+- `product-telemetry.ingested`
+- `product-telemetry.normalized`
 
-Start the full stack:
+Workflow events:
 
-```bash
-docker compose up -d --build
-```
-
-Open the app:
-
-```text
-http://localhost:3000
-```
-
-Health check:
-
-```text
-http://localhost:3000/api/health
-```
-
-API docs:
-
-```text
-http://localhost:3000/api/docs
-```
-
-Stop the stack:
-
-```bash
-docker compose down
-```
-
-## Cloud Deploy
-
-For a single cloud VM or single-host deployment, the command stays the same:
-
-```bash
-docker compose up -d --build
-```
-
-Recommended public env values:
-
-```bash
-APP_PORT=80
-APP_PUBLIC_ORIGIN=https://your-domain
-NEXT_PUBLIC_API_BASE_URL=/api
-API_BASE_URL=http://api:8000
-DISCOVERY_SCHEDULER_ENABLED=true
-AUTOMATION_POLL_SECONDS=300
-```
-
-Keep internal service URLs on Docker hostnames:
-
-```bash
-DATABASE_URL=postgresql+asyncpg://postgres:postgres@postgres:5432/blostem
-CLICKHOUSE_URL=http://clickhouse:8123
-QDRANT_URL=http://qdrant:6333
-REDPANDA_BROKERS=redpanda:9092
-OBJECT_STORAGE_ENDPOINT=http://minio:9000
-TEMPORAL_SERVER_URL=temporal:7233
-```
-
-Only the reverse proxy should be public. Admin/debug ports for Postgres, MinIO, Temporal UI, ClickHouse, and Qdrant are bound to `127.0.0.1` on the Docker host by default.
+- `opportunity.scored`
+- `committee.resolved`
+- `draft.generated`
+- `compliance.checked`
+- `approval.recorded`
+- `handoff.generated`
 
 ## Environment Variables
 
-Core app:
+### Core App
 
-- `APP_PORT`: public host port for Nginx proxy.
-- `APP_PUBLIC_ORIGIN`: public app origin used in provider headers.
-- `API_ROOT_PATH`: API mount path behind proxy, default `/api`.
-- `NEXT_PUBLIC_API_BASE_URL`: browser API base, default `/api`.
-- `API_BASE_URL`: server/container API base.
+- `APP_PORT`
+- `APP_PUBLIC_ORIGIN`
+- `API_ROOT_PATH`
+- `NEXT_PUBLIC_API_BASE_URL`
+- `API_BASE_URL`
+- `DATABASE_URL`
 
-Models:
+### AI Providers
 
 - `NVIDIA_API_KEY`
 - `NVIDIA_BASE_URL`
 - `NVIDIA_MODEL_KIMI`
-- `NVIDIA_KIMI_FALLBACK_MODELS`: ordered comma-separated NVIDIA Kimi fallback models, defaulting to `moonshotai/kimi-k2-thinking,moonshotai/kimi-k2-instruct-0905,moonshotai/kimi-k2-instruct`.
+- `NVIDIA_KIMI_FALLBACK_MODELS`
 - `OPENROUTER_API_KEY`
 - `OPENROUTER_BASE_URL`
 - `OPENROUTER_MODEL_GEMMA`
 
-Automation:
+### Reliability and Automation
 
 - `DISCOVERY_SCHEDULER_ENABLED`
 - `AUTOMATION_POLL_SECONDS`
-- `LIVE_SEARCH_PROVIDER`: `auto`, `tavily`, or `duckduckgo`.
-- `LIVE_SEARCH_MAX_RESULTS`: max live research results saved per prompt.
-- `TAVILY_API_KEY`: optional Tavily key. If omitted, the agent uses DuckDuckGo fallback.
+- `PROVIDER_ERROR_COOLDOWN_SECONDS`
+- `DRAFT_MODEL_TIMEOUT_SECONDS`
+- `AGENT_MODEL_TIMEOUT_SECONDS`
+- `EVENT_PUBLISH_TIMEOUT_MS`
 
-Data services:
+### Live Research
 
-- `DATABASE_URL`
+- `LIVE_SEARCH_PROVIDER`
+- `LIVE_SEARCH_MAX_RESULTS`
+- `TAVILY_API_KEY`
+
+### Data Services
+
 - `CLICKHOUSE_URL`
 - `CLICKHOUSE_DATABASE`
 - `QDRANT_URL`
@@ -592,29 +610,80 @@ Data services:
 - `TEMPORAL_SERVER_URL`
 - `TEMPORAL_NAMESPACE`
 
-## Bootstrap Data
+### Email
 
-To seed the workspace with public BFSI targets plus Google News RSS signals:
+- `SMTP_HOST`
+- `SMTP_PORT`
+- `SMTP_USER`
+- `SMTP_PASSWORD`
+- `SMTP_FROM`
+- `DEMO_EMAIL_OVERRIDE`
+
+## Local Run
+
+Create `.env` from the example and fill in the provider keys:
 
 ```bash
-docker compose exec api python apps/api/scripts/seed_real_data.py
+cp .env.example .env
 ```
 
-If you have the real Blostem product context as JSON:
+Start the full stack:
 
 ```bash
-docker compose exec api python apps/api/scripts/seed_real_data.py --product-context-file /app/path/to/product-context.json --build-handoffs
+docker compose up -d --build
 ```
+
+Open:
+
+- app: `http://localhost:3000`
+- health: `http://localhost:3000/api/health`
+- docs: `http://localhost:3000/api/docs`
+
+Stop:
+
+```bash
+docker compose down
+```
+
+## Cloud Deployment
+
+The deployment model is intentionally simple:
+
+```bash
+docker compose up -d --build
+```
+
+Recommended public settings:
+
+```bash
+APP_PORT=80
+APP_PUBLIC_ORIGIN=https://your-domain
+NEXT_PUBLIC_API_BASE_URL=/api
+API_BASE_URL=http://api:8000
+```
+
+Keep internal services on Docker hostnames:
+
+```bash
+DATABASE_URL=postgresql+asyncpg://postgres:postgres@postgres:5432/blostem
+CLICKHOUSE_URL=http://clickhouse:8123
+QDRANT_URL=http://qdrant:6333
+REDPANDA_BROKERS=redpanda:9092
+OBJECT_STORAGE_ENDPOINT=http://minio:9000
+TEMPORAL_SERVER_URL=temporal:7233
+```
+
+Only the reverse proxy should be publicly reachable.
 
 ## Testing
 
-Backend tests:
+Backend:
 
 ```bash
 python -m pytest apps/api/tests -q
 ```
 
-Frontend typecheck:
+Frontend lint:
 
 ```bash
 npm run lint --workspace web
@@ -626,7 +695,7 @@ Frontend production build:
 npm run build --workspace web
 ```
 
-Docker config validation:
+Docker config:
 
 ```bash
 docker compose config --quiet
@@ -634,47 +703,47 @@ docker compose config --quiet
 
 ## What Is Real vs Pilot-Limited
 
-Implemented and working in the pilot:
+Working now:
 
-- Shadow CRM records in Postgres.
-- Product contexts.
-- Account/contact creation.
-- Signal and telemetry ingestion.
-- Prompt-based market discovery.
-- Sidebar live-company research with cited signal persistence.
-- Scheduled discovery jobs and candidate inbox.
-- Candidate cleaning, grouping, scoring, and import.
-- Opportunity scoring and account next action.
-- CTO/CFO/Legal draft creation.
-- Compliance receipts with citation-required claim checks.
-- Human approval/rejection/edit endpoints.
-- Nurture sequence and touch state.
-- Closed-won handoff generation.
-- Telemetry-triggered activation nudge drafts.
-- Dockerized full-stack deployment.
+- Product contexts
+- Prompt-based discovery
+- Scheduled discovery jobs
+- Candidate inbox
+- Candidate import to queue
+- Account queue and detail
+- Async AI copilot sidebar
+- Live account research
+- Opportunity scoring
+- Committee mapping
+- CTO/CFO/Legal drafts
+- Compliance receipts
+- Draft edit / approve / reject
+- SMTP-backed reachout when configured
+- Nurture sequence state
+- Closed-won handoff
+- Telemetry-triggered activation nudges
+- Full Docker stack
 
 Pilot limitations:
 
-- Discovery uses structured public news/search ingestion, not a full autonomous crawler of the entire internet.
-- Live company research is query-driven through Tavily or DuckDuckGo. It does not browse private/paywalled sources or execute arbitrary web scraping.
-- External email sending is not enabled; drafts stop at human approval.
-- Temporal is provisioned, but most workflow logic currently runs synchronously inside the API.
-- ClickHouse, Qdrant, and MinIO are included as infrastructure foundations, but the current pilot leans mostly on Postgres.
-- CRM sync adapters are deferred; the Postgres Shadow CRM is the system of record for v1.
-- Live model quality depends on valid NVIDIA and OpenRouter keys. Deterministic local fallbacks keep the app testable when providers are unavailable.
+- Discovery is structured public search/news ingestion, not a fully autonomous unrestricted internet crawler
+- Most workflow execution still runs in the API service rather than full Temporal workers
+- ClickHouse, Qdrant, and MinIO are provisioned but not yet fully exploited
+- External CRM sync is deferred; Postgres Shadow CRM is the v1 system of record
+- Deep model quality depends on valid provider keys and external provider availability
 
 ## Suggested Demo Flow
 
-1. Start Docker with `docker compose up -d --build`.
-2. Open `http://localhost:3000`.
-3. Create or seed a Product Context.
-4. Run External Discovery with a prompt like `Find Indian banks with security, fraud, or compliance triggers`.
-5. Review ranked candidates.
-6. Add one candidate to the interested queue.
-7. Open the account detail page.
-8. Review the opportunity rationale, citations, stakeholder map, and nurture state.
-9. Open Draft Review for CTO/CFO/Legal drafts.
-10. Inspect the compliance receipt and approve or reject the draft.
-11. Create a closed-won handoff.
-12. Ingest telemetry such as `setup_started`.
-13. Confirm the system creates an activation nudge draft for review.
+1. Start the stack with `docker compose up -d --build`.
+2. Create a Product Context for one Blostem product.
+3. Run discovery for interested Indian BFSI targets.
+4. Add one candidate into the queue.
+5. Open that account.
+6. Ask the copilot for deep research.
+7. Refresh the opportunity.
+8. Review the CTO/CFO/Legal drafts.
+9. Check the compliance receipt.
+10. Approve one draft.
+11. Create a handoff.
+12. Ingest telemetry like `setup_started`.
+13. Review the activation nudge draft.
